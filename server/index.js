@@ -8,8 +8,14 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: [
+      "https://gps-tracking-system-for-ambulance-1.onrender.com",
+      "http://localhost:5000",
+      "http://10.98.28.101:5000",
+      "exp://*"
+    ],
+    methods: ["GET", "POST"],
+    credentials: true
   },
   transports: ['websocket', 'polling'],
   pingTimeout: 60000,
@@ -17,7 +23,12 @@ const io = socketIo(server, {
 });
 
 app.use(cors({
-  origin: "*",
+  origin: [
+    "https://gps-tracking-system-for-ambulance-1.onrender.com",
+    "http://localhost:5000",
+    "http://10.98.28.101:5000",
+    "exp://*"  // For Expo Go
+  ],
   credentials: true
 }));
 
@@ -95,39 +106,18 @@ const UserSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
-const HospitalSchema = new mongoose.Schema({
-  hospitalId: { type: String, required: true, unique: true },
-  name: { type: String, required: true },
-  email: { type: String, required: true, unique: true },
-  password: { type: String, required: true },
-  phone: String,
-  address: String,
-  location: {
-    latitude: Number,
-    longitude: Number
-  },
-  departments: [String],
-  ambulanceIds: [String],
-  isActive: { type: Boolean, default: true },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
-});
-
 const Ambulance = mongoose.models.Ambulance || mongoose.model('Ambulance', AmbulanceSchema);
 const Emergency = mongoose.models.Emergency || mongoose.model('Emergency', EmergencySchema);
 const User = mongoose.models.User || mongoose.model('User', UserSchema);
-const Hospital = mongoose.models.Hospital || mongoose.model('Hospital', HospitalSchema);
 
 // In-memory storage for real-time data
 const activeConnections = {
   drivers: new Map(),      // ambulanceId -> {socketId, data, location}
   users: new Map(),        // userId -> {socketId, data, location}
-  hospitals: new Map(),    // hospitalId -> {socketId, data, location} - NEW
   trackingPairs: new Map(), // userId -> ambulanceId
   pendingEmergencies: new Map(), // emergencyId -> emergencyData
   patientLocations: new Map(), // ambulanceId -> [{userId, location, patientInfo, timestamp}]
-  patientDetails: new Map(), // userId -> patientDetails
-  hospitalAssignments: new Map() // hospitalId -> [ambulanceIds] - NEW
+  patientDetails: new Map() // userId -> patientDetails
 };
 
 // Calculate distance between two coordinates
@@ -159,7 +149,6 @@ app.get('/', (req, res) => {
     connections: {
       drivers: activeConnections.drivers.size,
       users: activeConnections.users.size,
-      hospitals: activeConnections.hospitals.size, // NEW
       emergencies: activeConnections.pendingEmergencies.size,
       trackingPairs: activeConnections.trackingPairs.size,
       patientLocations: activeConnections.patientLocations.size
@@ -202,6 +191,7 @@ app.post('/api/driver/register', async (req, res) => {
       });
     }
     
+    // Try MongoDB first
     try {
       const ambulance = new Ambulance({
         ambulanceId,
@@ -225,6 +215,7 @@ app.post('/api/driver/register', async (req, res) => {
     } catch (dbError) {
       console.log('MongoDB registration failed, using in-memory:', dbError.message);
       
+      // In-memory fallback
       const inMemoryAmbulance = {
         ambulanceId,
         driverName,
@@ -263,6 +254,7 @@ app.post('/api/driver/login', async (req, res) => {
       });
     }
     
+    // Try MongoDB first
     try {
       const ambulance = await Ambulance.findOne({ ambulanceId, phone });
       
@@ -286,6 +278,7 @@ app.post('/api/driver/login', async (req, res) => {
     } catch (dbError) {
       console.log('MongoDB login failed, using in-memory:', dbError.message);
       
+      // In-memory fallback - accept any credentials for demo
       return res.json({
         success: true,
         message: 'Login successful (in-memory)',
@@ -320,6 +313,7 @@ app.post('/api/user/login', async (req, res) => {
     
     const userId = `user_${phone}`;
     
+    // Try MongoDB first
     try {
       let user = await User.findOne({ userId });
       
@@ -349,6 +343,7 @@ app.post('/api/user/login', async (req, res) => {
     } catch (dbError) {
       console.log('MongoDB user login failed, using in-memory:', dbError.message);
       
+      // In-memory fallback
       return res.json({
         success: true,
         message: 'User login successful (in-memory)',
@@ -368,213 +363,11 @@ app.post('/api/user/login', async (req, res) => {
   }
 });
 
-// Hospital registration
-app.post('/api/hospital/register', async (req, res) => {
-  try {
-    const { hospitalId, name, email, password, phone, address } = req.body;
-    
-    if (!hospitalId || !name || !email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Missing required fields: hospitalId, name, email, password' 
-      });
-    }
-    
-    try {
-      const hospital = new Hospital({
-        hospitalId,
-        name,
-        email,
-        password,
-        phone,
-        address,
-        isActive: true
-      });
-      
-      await hospital.save();
-      
-      return res.status(201).json({
-        success: true,
-        message: 'Hospital registered successfully',
-        hospital: {
-          hospitalId: hospital.hospitalId,
-          name: hospital.name,
-          email: hospital.email,
-          phone: hospital.phone,
-          address: hospital.address
-        }
-      });
-    } catch (dbError) {
-      console.log('MongoDB hospital registration failed:', dbError.message);
-      
-      return res.status(201).json({
-        success: true,
-        message: 'Hospital registered (in-memory)',
-        hospital: {
-          hospitalId,
-          name,
-          email,
-          phone,
-          address
-        }
-      });
-    }
-  } catch (error) {
-    console.error('Hospital registration error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Registration failed: ' + error.message 
-    });
-  }
-});
-
-// Hospital login
-app.post('/api/hospital/login', async (req, res) => {
-  try {
-    const { hospitalId, email, password } = req.body;
-    
-    if (!hospitalId || !email || !password) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Hospital ID, email and password are required' 
-      });
-    }
-    
-    try {
-      const hospital = await Hospital.findOne({ hospitalId, email });
-      
-      if (!hospital) {
-        return res.status(404).json({ 
-          success: false, 
-          error: 'Hospital not found. Please check your credentials.' 
-        });
-      }
-      
-      if (hospital.password !== password) {
-        return res.status(401).json({ 
-          success: false, 
-          error: 'Invalid password' 
-        });
-      }
-      
-      return res.json({
-        success: true,
-        message: 'Hospital login successful',
-        hospital: {
-          hospitalId: hospital.hospitalId,
-          name: hospital.name,
-          email: hospital.email,
-          phone: hospital.phone,
-          address: hospital.address
-        }
-      });
-    } catch (dbError) {
-      console.log('MongoDB hospital login failed:', dbError.message);
-      
-      if (email === 'hospital@example.com' && password === 'hospital123') {
-        return res.json({
-          success: true,
-          message: 'Hospital login successful (demo)',
-          hospital: {
-            hospitalId: 'HOSP-001',
-            name: 'City Medical Center',
-            email: 'hospital@example.com',
-            phone: '+91 44 2656 7890',
-            address: '123 Medical Drive, Malampichampatti'
-          }
-        });
-      }
-      
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Invalid hospital credentials' 
-      });
-    }
-  } catch (error) {
-    console.error('Hospital login error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Login failed: ' + error.message 
-    });
-  }
-});
-
-// Get hospital data
-app.get('/api/hospital/:hospitalId', async (req, res) => {
-  try {
-    const { hospitalId } = req.params;
-    
-    try {
-      const hospital = await Hospital.findOne({ hospitalId });
-      
-      if (!hospital) {
-        return res.status(404).json({ 
-          success: false, 
-          error: 'Hospital not found' 
-        });
-      }
-      
-      return res.json({
-        success: true,
-        hospital: {
-          hospitalId: hospital.hospitalId,
-          name: hospital.name,
-          email: hospital.email,
-          phone: hospital.phone,
-          address: hospital.address,
-          location: hospital.location,
-          departments: hospital.departments
-        }
-      });
-    } catch (dbError) {
-      console.log('MongoDB hospital fetch failed:', dbError.message);
-      
-      return res.json({
-        success: true,
-        hospital: {
-          hospitalId: 'HOSP-001',
-          name: 'City Medical Center',
-          email: 'hospital@example.com',
-          phone: '+91 44 2656 7890',
-          address: '123 Medical Drive, Malampichampatti',
-          location: { latitude: 10.904214, longitude: 76.998148 },
-          departments: ['Emergency', 'ICU', 'Surgery', 'Cardiology']
-        }
-      });
-    }
-  } catch (error) {
-    console.error('Hospital fetch error:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: 'Failed to fetch hospital data' 
-    });
-  }
-});
-
-// Get hospital ambulances
-app.get('/api/hospital/:hospitalId/ambulances', (req, res) => {
-  const { hospitalId } = req.params;
-  const assignments = activeConnections.hospitalAssignments.get(hospitalId) || [];
-  const hospitalAmbulances = Array.from(activeConnections.drivers.values())
-    .filter(driver => assignments.includes(driver.data.ambulanceId))
-    .map(driver => ({
-      ambulanceId: driver.data.ambulanceId,
-      driverName: driver.data.driverName,
-      phone: driver.data.phone,
-      vehicleType: driver.data.vehicleType || 'Basic Life Support',
-      location: driver.location,
-      status: 'active',
-      lastUpdate: driver.lastUpdate
-    }));
-  
-  res.json({ success: true, ambulances: hospitalAmbulances });
-});
-
 // Socket.io Connection Handling
 io.on('connection', (socket) => {
   console.log('🔌 New connection:', socket.id);
   
-  // Heartbeat
+  // Heartbeat to keep connection alive
   socket.on('ping', () => {
     socket.emit('pong', { timestamp: new Date().toISOString() });
   });
@@ -597,22 +390,12 @@ io.on('connection', (socket) => {
       socket.join(`ambulance-${ambulanceId}`);
       socket.join('drivers-room');
       
+      // Initialize patient locations array for this driver
       if (!activeConnections.patientLocations.has(ambulanceId)) {
         activeConnections.patientLocations.set(ambulanceId, []);
       }
       
-      // Send ambulance update to hospitals
-      const hospitalUpdate = {
-        ambulanceId,
-        driverName,
-        location: location || { latitude: 0, longitude: 0 },
-        status: 'online',
-        timestamp: new Date().toISOString()
-      };
-      
-      io.to('hospitals-room').emit('hospital-ambulance-update', hospitalUpdate);
-      
-      // Send online ambulances to users
+      // Broadcast updated list of online ambulances to all users
       const onlineAmbulances = Array.from(activeConnections.drivers.values())
         .filter(d => d.data && d.location)
         .map(d => ({
@@ -651,6 +434,7 @@ io.on('connection', (socket) => {
       socket.join(`user-${userId}`);
       socket.join('users-room');
       
+      // Send list of online ambulances to this user
       const onlineAmbulances = Array.from(activeConnections.drivers.values())
         .filter(d => d.data && d.location)
         .map(d => ({
@@ -671,51 +455,6 @@ io.on('connection', (socket) => {
     }
   });
   
-  // Hospital joins - NEW
-  socket.on('hospital-join', (data) => {
-    try {
-      const { hospitalId, hospitalName, location } = data;
-      
-      console.log(`🏥 Hospital joining: ${hospitalId} - ${hospitalName}`);
-      
-      activeConnections.hospitals.set(hospitalId, {
-        socketId: socket.id,
-        data: { hospitalId, hospitalName },
-        location: location || { latitude: 0, longitude: 0 },
-        lastUpdate: new Date(),
-        joinedAt: new Date()
-      });
-      
-      socket.join(`hospital-${hospitalId}`);
-      socket.join('hospitals-room');
-      
-      if (!activeConnections.hospitalAssignments.has(hospitalId)) {
-        activeConnections.hospitalAssignments.set(hospitalId, []);
-      }
-      
-      // Send current data to hospital
-      const onlineAmbulances = Array.from(activeConnections.drivers.values())
-        .filter(d => d.data && d.location)
-        .map(d => ({
-          ambulanceId: d.data.ambulanceId,
-          driverName: d.data.driverName,
-          phone: d.data.phone,
-          vehicleType: d.data.vehicleType || 'Basic Life Support',
-          location: d.location,
-          status: 'active',
-          lastUpdate: d.lastUpdate,
-          currentPatient: null
-        }));
-      
-      socket.emit('hospital-ambulances-update', onlineAmbulances);
-      
-      console.log(`✅ Hospital ${hospitalId} joined. Total hospitals: ${activeConnections.hospitals.size}`);
-      
-    } catch (error) {
-      console.error('Hospital join error:', error);
-    }
-  });
-  
   // Driver location update
   socket.on('driver-location-update', (data) => {
     try {
@@ -728,7 +467,7 @@ io.on('connection', (socket) => {
         driver.location = { latitude, longitude };
         driver.lastUpdate = new Date(timestamp) || new Date();
         
-        // Broadcast to users
+        // Broadcast to all users (for tracking)
         const locationData = {
           ambulanceId,
           latitude,
@@ -739,16 +478,8 @@ io.on('connection', (socket) => {
         
         io.emit('driver-location', locationData);
         
-        // Send to hospitals
-        const hospitalLocationUpdate = {
-          ambulanceId,
-          driverName: driverName || driver.data.driverName,
-          location: { latitude, longitude },
-          status: 'on-duty',
-          timestamp: driver.lastUpdate.toISOString()
-        };
-        
-        io.to('hospitals-room').emit('hospital-ambulance-location', hospitalLocationUpdate);
+        // Also send to specific ambulance room
+        io.to(`ambulance-${ambulanceId}`).emit('driver-location', locationData);
         
         // Update online ambulances list
         const onlineAmbulances = Array.from(activeConnections.drivers.values())
@@ -764,7 +495,7 @@ io.on('connection', (socket) => {
         
         io.emit('online-ambulances-update', onlineAmbulances);
         
-        // Calculate distance for tracking users
+        // If driver has tracking users, calculate and send distance/ETA
         for (const [userId, trackedAmbulanceId] of activeConnections.trackingPairs.entries()) {
           if (trackedAmbulanceId === ambulanceId) {
             const user = activeConnections.users.get(userId);
@@ -777,6 +508,7 @@ io.on('connection', (socket) => {
               );
               const eta = calculateETA(parseFloat(distance));
               
+              // Send distance update to user
               const userSocket = io.sockets.sockets.get(user.socketId);
               if (userSocket) {
                 userSocket.emit('distance-update', {
@@ -786,6 +518,7 @@ io.on('connection', (socket) => {
                 });
               }
               
+              // Send distance update to driver
               socket.emit('distance-update-driver', {
                 userId,
                 distance,
@@ -795,13 +528,15 @@ io.on('connection', (socket) => {
             }
           }
         }
+        
+        console.log(`📤 Broadcasted location for ${ambulanceId}`);
       }
     } catch (error) {
       console.error('Driver location update error:', error);
     }
   });
   
-  // User location update
+  // User location update (for navigation tracking)
   socket.on('user-location-update', (data) => {
     try {
       const { userId, ambulanceId, latitude, longitude, timestamp } = data;
@@ -813,9 +548,13 @@ io.on('connection', (socket) => {
         user.location = { latitude, longitude };
         user.lastUpdate = new Date(timestamp) || new Date();
         
+        console.log(`📝 User ${userId} location saved`);
+        
+        // If ambulanceId is provided, send to that specific driver
         if (ambulanceId) {
           const driver = activeConnections.drivers.get(ambulanceId);
           if (driver) {
+            console.log(`📤 Sending location to driver ${ambulanceId}`);
             io.to(driver.socketId).emit('user-location', {
               userId,
               latitude,
@@ -824,18 +563,7 @@ io.on('connection', (socket) => {
               userName: user.data?.name || 'User'
             });
             
-            // Notify hospital
-            const hospitalPatientUpdate = {
-              userId,
-              userName: user.data?.name || 'User',
-              ambulanceId,
-              location: { latitude, longitude },
-              type: 'Location Shared',
-              timestamp: user.lastUpdate.toISOString()
-            };
-            
-            io.to('hospitals-room').emit('hospital-patient-update', hospitalPatientUpdate);
-            
+            // Calculate and send distance
             if (driver.location) {
               const distance = calculateDistance(
                 driver.location.latitude,
@@ -852,21 +580,26 @@ io.on('connection', (socket) => {
                 userLocation: user.location
               });
               
+              // Also send to user
               socket.emit('distance-update', {
                 ambulanceId,
                 distance,
                 eta
               });
             }
+          } else {
+            console.log(`❌ Driver ${ambulanceId} not found`);
           }
         }
+      } else {
+        console.log(`❌ User ${userId} not found in active connections`);
       }
     } catch (error) {
       console.error('User location update error:', error);
     }
   });
   
-  // Share location with driver
+  // Share location with driver (NEW EVENT - for patient location sharing)
   socket.on('share-location-with-driver', (data) => {
     try {
       const { userId, ambulanceId, latitude, longitude, timestamp } = data;
@@ -876,32 +609,43 @@ io.on('connection', (socket) => {
       const user = activeConnections.users.get(userId);
       const driver = activeConnections.drivers.get(ambulanceId);
       
-      if (!user || !driver) return;
+      if (!user || !driver) {
+        console.log(`❌ User or driver not found`);
+        return;
+      }
       
+      // Update user location
       user.location = { latitude, longitude };
       user.lastUpdate = new Date(timestamp) || new Date();
       
+      // Create or update patient location entry
       const patientLocation = {
         userId,
         location: { latitude, longitude },
         timestamp: user.lastUpdate,
         userName: user.data?.name || 'Unknown Patient',
         phone: user.data?.phone || 'Not provided',
-        patientInfo: null,
+        patientInfo: null, // Will be filled when patient details are shared
         hasDetails: false
       };
       
+      // Get existing patient locations for this driver
       let patientLocations = activeConnections.patientLocations.get(ambulanceId) || [];
+      
+      // Check if this user already has a location entry
       const existingIndex = patientLocations.findIndex(p => p.userId === userId);
       if (existingIndex >= 0) {
+        // Update existing entry
         patientLocations[existingIndex] = patientLocation;
       } else {
+        // Add new entry
         patientLocations.push(patientLocation);
       }
       
+      // Save back to map
       activeConnections.patientLocations.set(ambulanceId, patientLocations);
       
-      // Notify driver
+      // Send notification to driver
       io.to(driver.socketId).emit('patient-location-shared', {
         userId,
         userName: user.data?.name || 'Unknown Patient',
@@ -910,23 +654,12 @@ io.on('connection', (socket) => {
         message: 'Patient has shared their location'
       });
       
-      // Notify hospital
-      const hospitalEmergency = {
-        type: 'Location Shared',
-        patientName: user.data?.name || 'Unknown Patient',
-        ambulanceId,
-        location: { latitude, longitude },
-        timestamp: user.lastUpdate.toISOString(),
-        condition: 'Location shared'
-      };
-      
-      io.to('hospitals-room').emit('hospital-emergency-alert', hospitalEmergency);
-      
+      // Setup tracking pair if not already
       if (!activeConnections.trackingPairs.has(userId)) {
         activeConnections.trackingPairs.set(userId, ambulanceId);
       }
       
-      // Send location to driver
+      // Also send regular location update for tracking
       io.to(driver.socketId).emit('user-location', {
         userId,
         latitude,
@@ -935,6 +668,7 @@ io.on('connection', (socket) => {
         userName: user.data?.name || 'User'
       });
       
+      // Calculate and send distance
       if (driver.location) {
         const distance = calculateDistance(
           driver.location.latitude,
@@ -951,6 +685,7 @@ io.on('connection', (socket) => {
           userLocation: user.location
         });
         
+        // Also send to user
         socket.emit('distance-update', {
           ambulanceId,
           distance,
@@ -958,12 +693,14 @@ io.on('connection', (socket) => {
         });
       }
       
+      console.log(`✅ Location shared successfully with driver ${ambulanceId}`);
+      
     } catch (error) {
       console.error('Share location error:', error);
     }
   });
   
-  // Patient details update
+  // Patient details update (UPDATE DETAILS ONLY - no new notification)
   socket.on('patient-details-update', (data) => {
     try {
       const { 
@@ -977,7 +714,7 @@ io.on('connection', (socket) => {
       
       console.log(`📋 Patient details update from user ${userId} for ambulance ${ambulanceId}`);
       
-      // Store details
+      // Store patient details
       activeConnections.patientDetails.set(userId, {
         userId,
         userName,
@@ -987,20 +724,23 @@ io.on('connection', (socket) => {
         updatedAt: new Date()
       });
       
-      // Update patient location entry
+      // Update the patient location entry with details
       const patientLocations = activeConnections.patientLocations.get(ambulanceId) || [];
       const patientIndex = patientLocations.findIndex(p => p.userId === userId);
       
       if (patientIndex >= 0) {
+        // Update existing patient location with details
         patientLocations[patientIndex].patientInfo = {
           userName,
           phone,
           condition: patientCondition
         };
         patientLocations[patientIndex].hasDetails = true;
+        
+        // Save back
         activeConnections.patientLocations.set(ambulanceId, patientLocations);
         
-        // Send to driver
+        // Send updated patient info to driver (no alert, just update)
         const driver = activeConnections.drivers.get(ambulanceId);
         if (driver) {
           io.to(driver.socketId).emit('patient-details-updated', {
@@ -1012,24 +752,15 @@ io.on('connection', (socket) => {
             timestamp: new Date().toISOString(),
             message: 'Patient details updated'
           });
+          
+          console.log(`✅ Patient details updated for driver ${ambulanceId}`);
         }
-        
-        // Send to hospital
-        const hospitalPatientDetails = {
-          userId,
-          userName,
-          phone,
-          condition: patientCondition,
-          ambulanceId,
-          location,
-          timestamp: new Date().toISOString(),
-          type: 'Patient Details'
-        };
-        
-        io.to('hospitals-room').emit('hospital-patient-details', hospitalPatientDetails);
+      } else {
+        // If no location was shared yet, just store details for later
+        console.log(`ℹ️ No location shared yet for user ${userId}, storing details only`);
       }
       
-      // Save to MongoDB
+      // Also try to save to MongoDB
       try {
         const emergency = new Emergency({
           patientName: userName,
@@ -1042,7 +773,11 @@ io.on('connection', (socket) => {
           status: 'accepted'
         });
         
-        emergency.save().catch(err => console.log('⚠️ MongoDB save failed:', err.message));
+        emergency.save().then(() => {
+          console.log('✅ Patient details saved to MongoDB');
+        }).catch(err => {
+          console.log('⚠️ MongoDB save failed:', err.message);
+        });
       } catch (dbError) {
         console.log('⚠️ MongoDB error:', dbError.message);
       }
@@ -1081,30 +816,40 @@ io.on('connection', (socket) => {
         acceptedBy: null
       };
       
+      // Save to in-memory storage
       activeConnections.pendingEmergencies.set(emergencyId, emergencyData);
       
-      // Notify drivers
-      io.to('drivers-room').emit('new-emergency', emergencyData);
+      // Try to save to MongoDB
+      try {
+        const emergency = new Emergency({
+          patientName: emergencyData.userName,
+          patientPhone: emergencyData.phone,
+          emergencyType: emergencyData.emergencyType,
+          location: emergencyData.location,
+          userId: emergencyData.userId,
+          patientCondition: emergencyData.patientCondition,
+          status: 'pending'
+        });
+        
+        await emergency.save();
+        console.log('✅ Emergency saved to MongoDB');
+      } catch (dbError) {
+        console.log('⚠️  MongoDB save failed:', dbError.message);
+      }
       
-      // Notify hospitals
-      io.to('hospitals-room').emit('hospital-emergency-alert', {
-        type: 'Emergency Request',
-        patientName: emergencyData.userName,
-        ambulanceId: null,
-        location: emergencyData.location,
-        timestamp: emergencyData.createdAt.toISOString(),
-        condition: emergencyData.patientCondition,
-        emergencyId
-      });
+      // Notify all online drivers
+      io.to('drivers-room').emit('new-emergency', emergencyData);
       
       // Confirm to user
       const user = activeConnections.users.get(userId);
       if (user) {
         io.to(user.socketId).emit('emergency-request-confirmed', {
           emergencyId,
-          message: 'Emergency request sent successfully.'
+          message: 'Emergency request sent successfully. Ambulances have been notified.'
         });
       }
+      
+      console.log(`📢 Emergency ${emergencyId} broadcasted to all drivers`);
       
     } catch (error) {
       console.error('Emergency request error:', error);
@@ -1124,13 +869,17 @@ io.on('connection', (socket) => {
         emergency.acceptedBy = ambulanceId;
         emergency.acceptedAt = new Date();
         
+        // Remove from pending
         activeConnections.pendingEmergencies.delete(emergencyId);
+        
+        // Setup tracking
         activeConnections.trackingPairs.set(emergency.userId, ambulanceId);
         
         const driver = activeConnections.drivers.get(ambulanceId);
         const user = activeConnections.users.get(emergency.userId);
         
         if (driver && user) {
+          // Calculate distance
           const distance = calculateDistance(
             driverLocation.latitude || driver.location.latitude,
             driverLocation.longitude || driver.location.longitude,
@@ -1164,21 +913,7 @@ io.on('connection', (socket) => {
             eta: eta
           });
           
-          // Notify hospital
-          const hospitalEmergencyAccept = {
-            emergencyId,
-            ambulanceId,
-            driverName: driverName || driver.data.driverName,
-            patientName: emergency.userName,
-            condition: emergency.patientCondition,
-            location: emergency.location,
-            timestamp: new Date().toISOString(),
-            status: 'accepted',
-            distance,
-            eta
-          };
-          
-          io.to('hospitals-room').emit('hospital-emergency-accepted', hospitalEmergencyAccept);
+          console.log(`🔄 Tracking started: User ${emergency.userId} -> Ambulance ${ambulanceId}`);
         }
       }
     } catch (error) {
@@ -1197,11 +932,14 @@ io.on('connection', (socket) => {
       const user = activeConnections.users.get(userId);
       
       if (driver && user) {
+        // Setup tracking pair
         activeConnections.trackingPairs.set(userId, ambulanceId);
         
+        // Join tracking rooms
         socket.join(`tracking-${userId}-${ambulanceId}`);
         io.to(driver.socketId).join(`tracking-${userId}-${ambulanceId}`);
         
+        // Send driver info to user
         io.to(user.socketId).emit('ambulance-selected', {
           ambulanceId,
           driverName: driver.data.driverName,
@@ -1210,12 +948,14 @@ io.on('connection', (socket) => {
           vehicleType: driver.data.vehicleType || 'Basic Life Support'
         });
         
+        // Send user info to driver
         io.to(driver.socketId).emit('user-selected-driver', {
           userId,
           userData: user.data,
           location: user.location
         });
         
+        // If user has location, send it immediately
         if (user.location) {
           setTimeout(() => {
             io.to(driver.socketId).emit('user-location', {
@@ -1226,6 +966,7 @@ io.on('connection', (socket) => {
               userName: user.data?.name || 'User'
             });
             
+            // Calculate distance
             if (driver.location) {
               const distance = calculateDistance(
                 driver.location.latitude,
@@ -1250,13 +991,15 @@ io.on('connection', (socket) => {
             }
           }, 500);
         }
+        
+        console.log(`✅ Ambulance ${ambulanceId} selected by user ${userId}`);
       }
     } catch (error) {
       console.error('User select ambulance error:', error);
     }
   });
   
-  // Start tracking user
+  // Start tracking user (driver initiates)
   socket.on('start-tracking-user', (data) => {
     try {
       const { ambulanceId, userId } = data;
@@ -1269,6 +1012,7 @@ io.on('connection', (socket) => {
       const user = activeConnections.users.get(userId);
       
       if (driver && user && user.location) {
+        // Send user's current location to driver
         io.to(driver.socketId).emit('user-location', {
           userId,
           latitude: user.location.latitude,
@@ -1277,6 +1021,7 @@ io.on('connection', (socket) => {
           userName: user.data?.name || 'User'
         });
         
+        // Calculate distance
         if (driver.location) {
           const distance = calculateDistance(
             driver.location.latitude,
@@ -1322,6 +1067,7 @@ io.on('connection', (socket) => {
           });
         }
       } else {
+        // No details available yet
         const driver = activeConnections.drivers.get(ambulanceId);
         if (driver) {
           io.to(driver.socketId).emit('patient-details-response', {
@@ -1332,75 +1078,6 @@ io.on('connection', (socket) => {
       }
     } catch (error) {
       console.error('Driver request patient details error:', error);
-    }
-  });
-  
-  // Hospital requests ambulances - NEW
-  socket.on('hospital-request-ambulances', (data) => {
-    try {
-      const { hospitalId } = data;
-      
-      const hospital = activeConnections.hospitals.get(hospitalId);
-      if (hospital) {
-        const onlineAmbulances = Array.from(activeConnections.drivers.values())
-          .filter(d => d.data && d.location)
-          .map(d => ({
-            ambulanceId: d.data.ambulanceId,
-            driverName: d.data.driverName,
-            phone: d.data.phone,
-            vehicleType: d.data.vehicleType || 'Basic Life Support',
-            location: d.location,
-            status: 'active',
-            lastUpdate: d.lastUpdate,
-            currentPatient: null
-          }));
-        
-        io.to(hospital.socketId).emit('hospital-ambulances-update', onlineAmbulances);
-      }
-    } catch (error) {
-      console.error('Hospital ambulances request error:', error);
-    }
-  });
-  
-  // Hospital dispatches ambulance - NEW
-  socket.on('hospital-dispatch-ambulance', (data) => {
-    try {
-      const { hospitalId, ambulanceId, destination, patientInfo } = data;
-      
-      console.log(`🏥 Hospital ${hospitalId} dispatching ambulance ${ambulanceId}`);
-      
-      const driver = activeConnections.drivers.get(ambulanceId);
-      const hospital = activeConnections.hospitals.get(hospitalId);
-      
-      if (driver && hospital) {
-        // Notify driver
-        io.to(driver.socketId).emit('hospital-dispatch-request', {
-          hospitalId,
-          hospitalName: hospital.data.hospitalName,
-          destination,
-          patientInfo,
-          timestamp: new Date().toISOString()
-        });
-        
-        // Add to hospital assignments
-        const assignments = activeConnections.hospitalAssignments.get(hospitalId) || [];
-        if (!assignments.includes(ambulanceId)) {
-          assignments.push(ambulanceId);
-          activeConnections.hospitalAssignments.set(hospitalId, assignments);
-        }
-        
-        // Confirm to hospital
-        io.to(hospital.socketId).emit('dispatch-confirmed', {
-          ambulanceId,
-          driverName: driver.data.driverName,
-          status: 'dispatched',
-          timestamp: new Date().toISOString()
-        });
-        
-        console.log(`✅ Ambulance ${ambulanceId} dispatched by hospital ${hospitalId}`);
-      }
-    } catch (error) {
-      console.error('Hospital dispatch error:', error);
     }
   });
   
@@ -1416,14 +1093,17 @@ io.on('connection', (socket) => {
         
         console.log(`🚑 Driver ${ambulanceId} disconnected`);
         
+        // Notify users tracking this ambulance
         io.emit('driver-disconnected', { ambulanceId });
         
+        // Remove all tracking pairs for this ambulance
         for (const [userId, trackedAmbulanceId] of activeConnections.trackingPairs.entries()) {
           if (trackedAmbulanceId === ambulanceId) {
             activeConnections.trackingPairs.delete(userId);
           }
         }
         
+        // Update online ambulances list
         const onlineAmbulances = Array.from(activeConnections.drivers.values())
           .filter(d => d.data && d.location)
           .map(d => ({
@@ -1437,9 +1117,6 @@ io.on('connection', (socket) => {
         
         io.emit('online-ambulances-update', onlineAmbulances);
         
-        // Notify hospitals
-        io.to('hospitals-room').emit('hospital-ambulance-disconnected', { ambulanceId });
-        
         break;
       }
     }
@@ -1451,23 +1128,13 @@ io.on('connection', (socket) => {
         activeConnections.trackingPairs.delete(userId);
         activeConnections.patientDetails.delete(userId);
         
+        // Also remove from all patient locations
         for (const [ambulanceId, patientLocations] of activeConnections.patientLocations.entries()) {
           const filtered = patientLocations.filter(p => p.userId !== userId);
           activeConnections.patientLocations.set(ambulanceId, filtered);
         }
         
         console.log(`👤 User ${userId} disconnected`);
-        break;
-      }
-    }
-    
-    // Remove hospital - NEW
-    for (const [hospitalId, hospital] of activeConnections.hospitals.entries()) {
-      if (hospital.socketId === socket.id) {
-        activeConnections.hospitals.delete(hospitalId);
-        activeConnections.hospitalAssignments.delete(hospitalId);
-        
-        console.log(`🏥 Hospital ${hospitalId} disconnected`);
         break;
       }
     }
