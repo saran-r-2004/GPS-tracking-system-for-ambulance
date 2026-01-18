@@ -26,7 +26,7 @@ const ASPECT_RATIO = width / height;
 const LATITUDE_DELTA = 0.0922;
 const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
 
-const SOCKET_URL = 'http://10.98.28.101:5000';
+const SOCKET_URL = 'https://gps-tracking-system-for-ambulance-1.onrender.com';
 
 interface LocationType {
   latitude: number;
