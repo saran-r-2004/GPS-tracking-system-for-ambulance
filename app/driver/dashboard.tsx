@@ -54,6 +54,7 @@ export default function DriverScreen() {
   const [eta, setEta] = useState<string>('--');
   const [patientDetails, setPatientDetails] = useState<any>(null);
   const [locationShared, setLocationShared] = useState(false);
+  const [hospitalDispatch, setHospitalDispatch] = useState<any>(null);
   
   const socketRef = useRef<any>(null);
   const mapRef = useRef<MapView>(null);
@@ -197,6 +198,13 @@ export default function DriverScreen() {
         phone: driverInfo.phone
       });
       
+      // Notify hospital
+      socket.emit('hospital-join', {
+        hospitalId: 'HOSP-001',
+        driverData: driverInfo,
+        location: initialLocation
+      });
+      
       startLocationSharing(driverInfo.ambulanceId);
     });
 
@@ -222,11 +230,9 @@ export default function DriverScreen() {
       );
     });
 
-    // Add these event listeners in the dashboard socket connection:
     socket.on('patient-location-shared', (data: any) => {
       console.log('📍 Patient location shared:', data);
       
-      // Add to emergencies list for display
       setEmergencies(prev => [{
         emergencyId: `LOC-${Date.now()}`,
         userId: data.userId,
@@ -255,7 +261,6 @@ export default function DriverScreen() {
               });
               setActiveTab('patient');
               
-              // Update map view
               if (driverLocation && mapRef.current) {
                 setTimeout(() => {
                   mapRef.current?.fitToCoordinates(
@@ -277,7 +282,6 @@ export default function DriverScreen() {
     socket.on('patient-details-updated', (data: any) => {
       console.log('📋 Patient details updated:', data);
       
-      // Update existing patient info without alert
       if (trackingUser?.userId === data.userId) {
         setTrackingUser(prev => ({
           ...prev,
@@ -287,10 +291,7 @@ export default function DriverScreen() {
         }));
       }
       
-      // Update patient details state
       setPatientDetails(data);
-      
-      // Show subtle notification instead of alert
       console.log('Patient details updated:', data.userName);
     });
 
@@ -322,7 +323,6 @@ export default function DriverScreen() {
       setEta(data.eta);
       
       if (data.userLocation && mapRef.current) {
-        // Update map view
         setTimeout(() => {
           mapRef.current?.fitToCoordinates(
             [driverLocation, data.userLocation],
@@ -373,6 +373,45 @@ export default function DriverScreen() {
       setActiveTab('patient');
     });
 
+    // Hospital dispatch request - NEW
+    socket.on('hospital-dispatch-request', (data: any) => {
+      console.log('🏥 Hospital dispatch request:', data);
+      setHospitalDispatch(data);
+      
+      Alert.alert(
+        '🏥 Hospital Dispatch',
+        `Hospital ${data.hospitalName || 'HOSP-001'} is requesting dispatch.\nDestination: ${data.destination || 'Emergency'}`,
+        [
+          { 
+            text: 'Accept Dispatch', 
+            onPress: () => {
+              Alert.alert('Dispatch Accepted', 'You have accepted the hospital dispatch request.');
+              setHospitalDispatch(null);
+            }
+          },
+          { 
+            text: 'View Details', 
+            onPress: () => {
+              // Show dispatch details
+            }
+          }
+        ]
+      );
+    });
+
+    // Hospital ambulance update - NEW
+    socket.on('hospital-ambulance-update', (data: any) => {
+      console.log('🏥 Hospital ambulance update:', data);
+    });
+
+    socket.on('hospital-emergency-alert', (data: any) => {
+      console.log('🏥 Hospital emergency alert:', data);
+    });
+
+    socket.on('hospital-emergency-accepted', (data: any) => {
+      console.log('🏥 Hospital emergency accepted:', data);
+    });
+
     setLoading(false);
   };
 
@@ -413,7 +452,7 @@ export default function DriverScreen() {
     }, 3000);
 
     setSharing(true);
-    Alert.alert('Location Sharing', 'Your location is now being shared with patients');
+    Alert.alert('Location Sharing', 'Your location is now being shared with patients and hospital');
   };
 
   const stopLocationSharing = () => {
@@ -577,12 +616,33 @@ export default function DriverScreen() {
           <View style={styles.statDivider} />
           
           <View style={styles.statCard}>
-            <Feather name="clock" size={18} color="#FFF" />
-            <Text style={styles.statValue}>24/7</Text>
-            <Text style={styles.statLabel}>Service</Text>
+            <Feather name="hospital" size={18} color="#FFF" />
+            <Text style={styles.statValue}>HOSP</Text>
+            <Text style={styles.statLabel}>Linked</Text>
           </View>
         </View>
       </View>
+
+      {/* Hospital Dispatch Alert */}
+      {hospitalDispatch && (
+        <View style={styles.hospitalAlert}>
+          <View style={styles.hospitalAlertContent}>
+            <MaterialIcons name="local-hospital" size={20} color="#1976D2" />
+            <View style={styles.hospitalAlertText}>
+              <Text style={styles.hospitalAlertTitle}>Hospital Dispatch Request</Text>
+              <Text style={styles.hospitalAlertSubtitle}>
+                {hospitalDispatch.hospitalName} • {hospitalDispatch.destination}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setHospitalDispatch(null)}>
+              <Feather name="x" size={20} color="#666" />
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={styles.hospitalAlertButton}>
+            <Text style={styles.hospitalAlertButtonText}>View Details</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Main Content */}
       <ScrollView 
@@ -602,7 +662,7 @@ export default function DriverScreen() {
               showsMyLocationButton={false}
               showsCompass={true}
             >
-              {/* Driver Marker - FIXED CENTERED CIRCLE */}
+              {/* Driver Marker */}
               {driverLocation && (
                 <Marker
                   coordinate={driverLocation}
@@ -618,7 +678,7 @@ export default function DriverScreen() {
                 </Marker>
               )}
 
-              {/* Patient Marker - FIXED CENTERED CIRCLE */}
+              {/* Patient Marker */}
               {userLocation && (
                 <Marker
                   coordinate={userLocation}
@@ -664,7 +724,7 @@ export default function DriverScreen() {
             </View>
           </View>
           
-          {/* Distance Info - ADDED SPACING */}
+          {/* Distance Info */}
           {userLocation && driverLocation && (
             <View style={styles.distanceCard}>
               <View style={styles.distanceHeader}>
@@ -681,9 +741,6 @@ export default function DriverScreen() {
             </View>
           )}
         </View>
-
-        {/* ADDED SPACING BETWEEN DISTANCE CARD AND TAB NAVIGATION */}
-        <View style={{ height: 16 }} />
 
         {/* Tab Navigation */}
         <View style={styles.tabNavigation}>
@@ -760,11 +817,20 @@ export default function DriverScreen() {
                   }}
                 >
                   <View style={styles.emergencyHeader}>
-                    <View style={styles.emergencyIcon}>
-                      <Feather name="alert-triangle" size={16} color="#FF9500" />
+                    <View style={[
+                      styles.emergencyIcon,
+                      emergency.isLocationOnly ? { backgroundColor: 'rgba(66,133,244,0.1)' } : null
+                    ]}>
+                      <Feather 
+                        name={emergency.isLocationOnly ? "map-pin" : "alert-triangle"} 
+                        size={16} 
+                        color={emergency.isLocationOnly ? "#4285F4" : "#FF9500"} 
+                      />
                     </View>
                     <View style={styles.emergencyInfo}>
-                      <Text style={styles.emergencyTitle}>Emergency Request</Text>
+                      <Text style={styles.emergencyTitle}>
+                        {emergency.isLocationOnly ? 'Location Shared' : 'Emergency Request'}
+                      </Text>
                       <Text style={styles.emergencyPatient}>
                         {emergency.userName || 'Unknown Patient'}
                       </Text>
@@ -878,6 +944,12 @@ export default function DriverScreen() {
                 <Text style={styles.statusCardValue}>{driverData?.ambulanceId}</Text>
               </View>
               
+              <View style={styles.statusCard}>
+                <MaterialIcons name="local-hospital" size={24} color="#1976D2" />
+                <Text style={styles.statusCardTitle}>Hospital Linked</Text>
+                <Text style={styles.statusCardValue}>City Medical Center</Text>
+              </View>
+              
               <TouchableOpacity 
                 style={styles.logoutButton}
                 onPress={() => setShowLogoutConfirm(true)}
@@ -920,6 +992,12 @@ export default function DriverScreen() {
                     <Feather name="phone" size={18} color="#8E8E93" />
                     <Text style={styles.detailValue}>
                       {selectedEmergency.phone || 'Not specified'}
+                    </Text>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <Feather name="activity" size={18} color="#8E8E93" />
+                    <Text style={styles.detailValue}>
+                      Condition: {selectedEmergency.patientCondition || 'Unknown'}
                     </Text>
                   </View>
                 </View>
@@ -1102,6 +1180,45 @@ const styles = StyleSheet.create({
     height: 30,
     backgroundColor: 'rgba(255,255,255,0.3)',
   },
+  hospitalAlert: {
+    backgroundColor: '#E8F4FD',
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1976D2',
+  },
+  hospitalAlertContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  hospitalAlertText: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  hospitalAlertTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1976D2',
+    marginBottom: 2,
+  },
+  hospitalAlertSubtitle: {
+    fontSize: 14,
+    color: '#666',
+  },
+  hospitalAlertButton: {
+    backgroundColor: '#1976D2',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  hospitalAlertButtonText: {
+    color: '#FFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
   content: {
     flex: 1,
   },
@@ -1150,7 +1267,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     padding: 16,
     borderRadius: 16,
-    marginTop: 16, // INCREASED SPACING
+    marginTop: 16,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },

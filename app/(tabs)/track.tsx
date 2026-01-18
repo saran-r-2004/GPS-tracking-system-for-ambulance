@@ -120,7 +120,7 @@ export default function TrackScreen() {
     
     Alert.alert(
       '📍 Location Shared',
-      'Your location has been shared with the ambulance driver. They have been notified about a patient at your location.',
+      'Your location has been shared with the ambulance driver. Hospitals have also been notified.',
       [{ text: 'OK' }]
     );
   };
@@ -150,7 +150,37 @@ export default function TrackScreen() {
     
     Alert.alert(
       '✅ Patient Details Sent',
-      'Patient information has been updated in the ambulance driver\'s system.',
+      'Patient information has been updated in the ambulance and hospital system.',
+      [{ text: 'OK' }]
+    );
+  };
+
+  const sendEmergencyRequest = () => {
+    if (!socketRef.current || !userLocation) {
+      Alert.alert('Error', 'Please wait for connection');
+      return;
+    }
+
+    if (!patientDetails.name || !patientDetails.phone) {
+      Alert.alert('Error', 'Please enter patient details first');
+      return;
+    }
+
+    socketRef.current.emit('emergency-request', {
+      userId,
+      userName: patientDetails.name,
+      phone: patientDetails.phone,
+      location: userLocation,
+      emergencyType: 'Medical Emergency',
+      patientCondition: patientDetails.condition,
+      timestamp: new Date().toISOString()
+    });
+
+    setEmergencyModal(false);
+    
+    Alert.alert(
+      '🚨 Emergency Request Sent',
+      'Emergency request has been sent to all available ambulances and hospitals.',
       [{ text: 'OK' }]
     );
   };
@@ -431,6 +461,20 @@ export default function TrackScreen() {
         setSelectedAmbulanceId(null);
       });
 
+      socket.on('distance-update', (data: any) => {
+        console.log('📏 Distance update:', data);
+        setDistance(data.distance);
+        setEta(data.eta);
+      });
+
+      socket.on('emergency-request-confirmed', (data: any) => {
+        Alert.alert(
+          '🚨 Emergency Sent',
+          'Your emergency request has been sent to all available ambulances and hospitals.',
+          [{ text: 'OK' }]
+        );
+      });
+
       setLoading(false);
       
     } catch (error) {
@@ -639,7 +683,7 @@ export default function TrackScreen() {
           <View style={styles.statCard}>
             <Feather name="truck" size={18} color="#FFF" />
             <Text style={styles.statValue}>{onlineAmbulances.length}</Text>
-            <Text style={styles.statLabel}>Availablee</Text>
+            <Text style={styles.statLabel}>Available</Text>
           </View>
           
           <View style={styles.statDivider} />
@@ -655,7 +699,7 @@ export default function TrackScreen() {
           <View style={styles.statCard}>
             <Feather name="shield" size={18} color="#FFF" />
             <Text style={styles.statValue}>24/7</Text>
-            <Text style={styles.statLabel}>Servicee</Text>
+            <Text style={styles.statLabel}>Service</Text>
           </View>
         </View>
       </View>
@@ -763,7 +807,7 @@ export default function TrackScreen() {
           )}
         </View>
 
-        {/* Quick Actions - FIXED ICONS AND COLORS */}
+        {/* Quick Actions */}
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={[styles.actionButton, !selectedAmbulanceId && styles.actionButtonDisabled]}
@@ -816,6 +860,20 @@ export default function TrackScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* Emergency Button */}
+        <TouchableOpacity 
+          style={styles.emergencyButton}
+          onPress={() => setEmergencyModal(true)}
+        >
+          <View style={styles.emergencyButtonContent}>
+            <Feather name="alert-circle" size={24} color="#FFF" />
+            <Text style={styles.emergencyButtonText}>Emergency Request</Text>
+          </View>
+          <Text style={styles.emergencyButtonSubtext}>
+            Send emergency to all ambulances & hospitals
+          </Text>
+        </TouchableOpacity>
 
         {/* Selected Ambulance Details */}
         {selectedAmbulanceId ? (
@@ -871,6 +929,14 @@ export default function TrackScreen() {
                   </Text>
                 </View>
               </View>
+              
+              <TouchableOpacity 
+                style={styles.navigateButton}
+                onPress={openGoogleMaps}
+              >
+                <Feather name="navigation" size={18} color="#FFF" />
+                <Text style={styles.navigateButtonText}>Open in Maps</Text>
+              </TouchableOpacity>
             </View>
           </View>
         ) : (
@@ -980,7 +1046,7 @@ export default function TrackScreen() {
         </View>
       </ScrollView>
 
-      {/* Patient Details Modal */}
+      {/* Patient/Emergency Details Modal */}
       <Modal
         visible={emergencyModal}
         transparent={true}
@@ -992,7 +1058,9 @@ export default function TrackScreen() {
             <View style={styles.modalHeader}>
               <View style={styles.modalTitleContainer}>
                 <Feather name="user" size={24} color="#FF3B30" />
-                <Text style={styles.modalTitle}>Patient Details</Text>
+                <Text style={styles.modalTitle}>
+                  {selectedAmbulanceId ? 'Patient Details' : 'Emergency Request'}
+                </Text>
               </View>
               <TouchableOpacity onPress={() => setEmergencyModal(false)}>
                 <Feather name="x" size={24} color="#8E8E93" />
@@ -1001,7 +1069,9 @@ export default function TrackScreen() {
             
             <ScrollView style={styles.modalContent}>
               <Text style={styles.modalDescription}>
-                Share patient information with the ambulance driver.
+                {selectedAmbulanceId 
+                  ? 'Share patient information with the ambulance driver.'
+                  : 'Send emergency request to all available ambulances and hospitals.'}
               </Text>
               
               <View style={styles.inputGroup}>
@@ -1053,18 +1123,44 @@ export default function TrackScreen() {
               <View style={styles.locationNote}>
                 <Feather name="info" size={16} color="#FF3B30" />
                 <Text style={styles.locationNoteText}>
-                  This information will be shared with the ambulance driver
+                  {selectedAmbulanceId 
+                    ? 'This information will be shared with the ambulance driver and hospital'
+                    : 'Emergency request will be sent to all available ambulances and hospitals'}
                 </Text>
               </View>
               
-              <TouchableOpacity 
-                style={styles.submitButton}
-                onPress={sendPatientDetails}
-                disabled={!patientDetails.name || !patientDetails.phone}
-              >
-                <Feather name="send" size={20} color="#FFF" />
-                <Text style={styles.submitButtonText}>Share Patient Details</Text>
-              </TouchableOpacity>
+              <View style={styles.modalActions}>
+                {selectedAmbulanceId ? (
+                  <>
+                    <TouchableOpacity 
+                      style={[styles.modalActionButton, styles.sendDetailsButton]}
+                      onPress={sendPatientDetails}
+                      disabled={!patientDetails.name || !patientDetails.phone}
+                    >
+                      <Feather name="send" size={20} color="#FFF" />
+                      <Text style={styles.modalActionButtonText}>Share Patient Details</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={[styles.modalActionButton, styles.emergencyButtonModal]}
+                      onPress={sendEmergencyRequest}
+                      disabled={!patientDetails.name || !patientDetails.phone}
+                    >
+                      <Feather name="alert-circle" size={20} color="#FFF" />
+                      <Text style={styles.modalActionButtonText}>Send Emergency Request</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <TouchableOpacity 
+                    style={[styles.modalActionButton, styles.emergencyButtonModal]}
+                    onPress={sendEmergencyRequest}
+                    disabled={!patientDetails.name || !patientDetails.phone}
+                  >
+                    <Feather name="alert-circle" size={20} color="#FFF" />
+                    <Text style={styles.modalActionButtonText}>Send Emergency to All</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </ScrollView>
           </View>
         </View>
@@ -1094,7 +1190,7 @@ export default function TrackScreen() {
                 <Feather name="map-pin" size={48} color="#FF3B30" />
                 <Text style={styles.shareTitle}>Share your location?</Text>
                 <Text style={styles.shareDescription}>
-                  Your current location will be shared with {driverName || 'the ambulance driver'} for navigation.
+                  Your current location will be shared with {driverName || 'the ambulance driver'} and hospital for navigation.
                 </Text>
                 
                 {userLocation && (
@@ -1456,7 +1552,6 @@ const styles = StyleSheet.create({
     height: 40,
     borderRadius: 20,
   },
-  // FIXED ACTION BUTTONS
   actionsContainer: {
     flexDirection: 'row',
     paddingHorizontal: 16,
@@ -1503,6 +1598,37 @@ const styles = StyleSheet.create({
   },
   actionTextDisabled: {
     color: '#C7C7CC',
+  },
+  emergencyButton: {
+    backgroundColor: '#FFF',
+    marginHorizontal: 16,
+    marginBottom: 20,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#FF3B30',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+  },
+  emergencyButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 8,
+  },
+  emergencyButtonText: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FF3B30',
+  },
+  emergencyButtonSubtext: {
+    fontSize: 12,
+    color: '#8E8E93',
+    textAlign: 'center',
   },
   ambulanceDetails: {
     paddingHorizontal: 16,
@@ -1585,6 +1711,7 @@ const styles = StyleSheet.create({
   ambulanceStats: {
     flexDirection: 'row',
     gap: 12,
+    marginBottom: 20,
   },
   statBox: {
     flex: 1,
@@ -1603,6 +1730,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#1C1C1E',
+  },
+  navigateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#007AFF',
+    padding: 16,
+    borderRadius: 12,
+    gap: 10,
+  },
+  navigateButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
   noSelection: {
     paddingHorizontal: 16,
@@ -1838,16 +1979,24 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#FF3B30',
   },
-  submitButton: {
+  modalActions: {
+    gap: 12,
+  },
+  modalActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FF3B30',
     padding: 16,
     borderRadius: 12,
     gap: 10,
   },
-  submitButtonText: {
+  sendDetailsButton: {
+    backgroundColor: '#FF3B30',
+  },
+  emergencyButtonModal: {
+    backgroundColor: '#FF3B30',
+  },
+  modalActionButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
