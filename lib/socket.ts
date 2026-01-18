@@ -11,7 +11,7 @@ const EMULATOR_URL = 'http://10.0.2.2:5000';
 const IOS_URL = 'http://localhost:5000';
 
 // Simple - Use your IP always
-export const SOCKET_URL = 'http://10.98.28.101:5000';
+export const SOCKET_URL = 'https://gps-tracking-system-for-ambulance-1.onrender.com';
 
 // Or detect platform
 export const getSocketUrl = () => {
