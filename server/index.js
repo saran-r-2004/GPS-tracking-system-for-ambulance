@@ -8,7 +8,12 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server, {
   cors: {
-    origin: "*",
+    origin: [
+      "https://gps-tracking-system-for-ambulance-1.onrender.com",
+      "http://localhost:5000",
+      "http://10.98.28.101:5000",
+      "exp://*"
+    ],
     methods: ["GET", "POST"],
     credentials: true
   },
@@ -18,9 +23,15 @@ const io = socketIo(server, {
 });
 
 app.use(cors({
-  origin: "*",
+  origin: [
+    "https://gps-tracking-system-for-ambulance-1.onrender.com",
+    "http://localhost:5000",
+    "http://10.98.28.101:5000",
+    "exp://*"  // For Expo Go
+  ],
   credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

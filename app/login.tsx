@@ -1,5 +1,16 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, View, Image, TouchableOpacity, TextInput, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { 
+  StyleSheet, 
+  View, 
+  Image, 
+  TouchableOpacity, 
+  TextInput, 
+  Alert, 
+  ScrollView, 
+  ActivityIndicator,
+  Platform,
+  Linking 
+} from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Link, useRouter } from 'expo-router';
@@ -52,26 +63,46 @@ export default function LoginScreen() {
       let { status } = await Location.requestForegroundPermissionsAsync();
       
       if (status !== 'granted') {
+        // Don't block login if location fails
         Alert.alert(
-          'Location Permission Required',
-          'This app needs location access to track ambulances. Please enable location services.',
+          'Location Access',
+          'Location access not granted. You can still track ambulances but with limited features.',
           [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Settings', onPress: () => Linking.openSettings() }
+            { 
+              text: 'Continue Anyway', 
+              onPress: () => {
+                router.push({
+                  pathname: '/(tabs)/track',
+                  params: { 
+                    userPhone: userCredentials.phone,
+                    // Use default location
+                    userLat: 10.8998,
+                    userLng: 76.9962
+                  }
+                });
+              }
+            },
+            { text: 'Cancel', style: 'cancel' }
           ]
         );
         setLoading(false);
         return;
       }
 
-      // Get user's location
-      const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      });
+      // Get location with timeout
+      const location = await Promise.race([
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced, // Faster than High
+          timeInterval: 5000,
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Location timeout')), 8000)
+        )
+      ]) as any;
 
-      console.log('User location obtained:', location.coords);
+      console.log('📍 Location obtained');
       
-      // Directly navigate to track page with user info
+      // Navigate immediately
       router.push({
         pathname: '/(tabs)/track',
         params: { 
@@ -81,9 +112,27 @@ export default function LoginScreen() {
         }
       });
       
-    } catch (error) {
-      console.error('Login error:', error);
-      Alert.alert('Error', 'Failed to get location. Please try again.');
+    } catch (error: any) {
+      console.error('Location error:', error);
+      
+      // Continue with default location
+      Alert.alert(
+        'Location Issue',
+        'Using default location. You can update location later.',
+        [{ 
+          text: 'Continue', 
+          onPress: () => {
+            router.push({
+              pathname: '/(tabs)/track',
+              params: { 
+                userPhone: userCredentials.phone,
+                userLat: 10.8998,
+                userLng: 76.9962
+              }
+            });
+          }
+        }]
+      );
     } finally {
       setLoading(false);
     }
@@ -98,28 +147,76 @@ export default function LoginScreen() {
     setLoading(true);
     
     try {
-      const response = await fetch('http://10.98.28.101:5000/api/driver/login', {
+      // FOR RENDER - Always use HTTPS
+      const API_URL = 'https://gps-tracking-system-for-ambulance-1.onrender.com';
+      
+      console.log('🌐 Connecting to:', API_URL);
+      console.log('📱 Login attempt:', driverCredentials.id);
+      
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 20000); // 20 second timeout
+      
+      const response = await fetch(`${API_URL}/api/driver/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         body: JSON.stringify({
           ambulanceId: driverCredentials.id,
           phone: driverCredentials.password
-        })
+        }),
+        signal: controller.signal
       });
-
+      
+      clearTimeout(timeoutId);
+      
+      console.log('✅ Response received, status:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('📦 Response data:', data);
 
       if (data.success) {
+        console.log('🎉 Login successful, navigating to dashboard');
         Alert.alert('Success', 'Driver login successful!');
+        
+        // Navigate to dashboard
         router.push({
           pathname: '/driver/dashboard',
           params: { driverData: JSON.stringify(data.driver) }
         });
+        
       } else {
-        Alert.alert('Error', data.error || 'Invalid credentials');
+        Alert.alert('Login Failed', data.error || 'Invalid credentials');
       }
-    } catch (error) {
-      Alert.alert('Error', 'Network error. Please try again.');
+      
+    } catch (error: any) {
+      console.error('❌ Login error:', error);
+      
+      if (error.name === 'AbortError') {
+        Alert.alert(
+          'Timeout Error', 
+          'Server is taking too long to respond. This happens sometimes on Render free tier.\n\nPlease wait 30 seconds and try again.'
+        );
+      } else if (error.message.includes('Network request failed')) {
+        Alert.alert(
+          'Network Error', 
+          'Cannot connect to server. Please:\n1. Check your internet connection\n2. Make sure the server is running on Render\n3. Try refreshing the page'
+        );
+      } else if (error.message.includes('Server error')) {
+        Alert.alert(
+          'Server Error', 
+          'The server returned an error. Try using demo credentials:\n\nAmbulance ID: AMB-001\nPhone: 9876543210'
+        );
+      } else {
+        Alert.alert('Error', 'Login failed. Please try again.');
+      }
+      
     } finally {
       setLoading(false);
     }
