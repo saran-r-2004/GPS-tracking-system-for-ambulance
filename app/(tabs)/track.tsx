@@ -683,7 +683,7 @@ export default function TrackScreen() {
           <View style={styles.statCard}>
             <Feather name="truck" size={18} color="#FFF" />
             <Text style={styles.statValue}>{onlineAmbulances.length}</Text>
-            <Text style={styles.statLabel}>Available</Text>
+            <Text style={styles.statLabel}>Availablee</Text>
           </View>
           
           <View style={styles.statDivider} />
@@ -699,7 +699,7 @@ export default function TrackScreen() {
           <View style={styles.statCard}>
             <Feather name="shield" size={18} color="#FFF" />
             <Text style={styles.statValue}>24/7</Text>
-            <Text style={styles.statLabel}>Service</Text>
+            <Text style={styles.statLabel}>Servicee</Text>
           </View>
         </View>
       </View>
@@ -871,7 +871,7 @@ export default function TrackScreen() {
             <Text style={styles.emergencyButtonText}>Emergency Request</Text>
           </View>
           <Text style={styles.emergencyButtonSubtext}>
-            Send emergency to all ambulances & hospitals
+            Send emergency to all ambulances & hospitals  fdsds
           </Text>
         </TouchableOpacity>
 

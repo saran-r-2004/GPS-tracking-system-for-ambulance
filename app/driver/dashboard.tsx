@@ -506,7 +506,7 @@ export default function DriverScreen() {
   const handleLogout = () => {
     if (socketRef.current) socketRef.current.disconnect();
     if (locationInterval.current) clearInterval(locationInterval.current);
-    router.replace('/driver/login');
+    router.replace('/login');
   };
 
   const getInitialRegion = (): Region => {
