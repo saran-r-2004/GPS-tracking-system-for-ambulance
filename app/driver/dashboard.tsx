@@ -747,7 +747,7 @@ export default function DriverScreen() {
               <View style={styles.emptyState}>
                 <Feather name="check-circle" size={48} color="#4CD964" />
                 <Text style={styles.emptyStateTitle}>No Active Emergencies</Text>
-                <Text style={styles.emptyStateText}>You're all caught up!</Text>
+                <Text style={styles.emptyStateText}>You are all caught up!</Text>
               </View>
             ) : (
               emergencies.map((emergency, index) => (
@@ -1591,9 +1591,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     fontFamily: 'System',
-  },
-  acceptButton: {
-    backgroundColor: '#FF3B30',
   },
   logoutContent: {
     padding: 40,

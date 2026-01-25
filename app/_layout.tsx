@@ -46,14 +46,7 @@ export default function RootLayout() {
           name="driver/dashboard" 
           options={{ title: "Driver Dashboard" }} 
         />
-        <Stack.Screen 
-          name="hospital-admin/login" 
-          options={{ title: "Hospital Admin Login" }} 
-        />
-        <Stack.Screen 
-          name="hospital-admin/dashboard" 
-          options={{ title: "Hospital Dashboard" }} 
-        />
+        {/* REMOVED Hospital Admin Routes */}
       </Stack>
     </>
   );

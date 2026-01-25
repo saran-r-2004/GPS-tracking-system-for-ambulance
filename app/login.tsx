@@ -21,12 +21,6 @@ export default function LoginScreen() {
   const [activeTab, setActiveTab] = useState('user');
   const [userCredentials, setUserCredentials] = useState({ phone: '' });
   const [driverCredentials, setDriverCredentials] = useState({ id: '', password: '' });
-  const [adminCredentials, setAdminCredentials] = useState({ username: '', password: '' });
-  const [hospitalCredentials, setHospitalCredentials] = useState({ 
-    hospitalId: '', 
-    username: '', 
-    password: '' 
-  });
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
@@ -222,26 +216,6 @@ export default function LoginScreen() {
     }
   };
 
-  const handleHospitalLogin = () => {
-    if (!hospitalCredentials.hospitalId || !hospitalCredentials.username || !hospitalCredentials.password) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
-    }
-
-    setLoading(true);
-    
-    // Simple hospital admin validation
-    setTimeout(() => {
-      setLoading(false);
-      if (hospitalCredentials.username === 'hospital' && hospitalCredentials.password === 'hospital123') {
-        Alert.alert('Success', 'Hospital admin login successful!');
-        router.push('/Hospital-admin/dashboard');
-      } else {
-        Alert.alert('Error', 'Invalid hospital admin credentials');
-      }
-    }, 1500);
-  };
-
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
       <View style={styles.header}>
@@ -280,20 +254,6 @@ export default function LoginScreen() {
           />
           <ThemedText style={[styles.tabText, activeTab === 'driver' && styles.activeTabText]}>
             Driver
-          </ThemedText>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={[styles.tab, activeTab === 'hospital' && styles.activeTab]}
-          onPress={() => setActiveTab('hospital')}
-        >
-          <MaterialIcons 
-            name="local-hospital" 
-            size={16} 
-            color={activeTab === 'hospital' ? '#7B1FA2' : '#666'} 
-          />
-          <ThemedText style={[styles.tabText, activeTab === 'hospital' && styles.activeTabText]}>
-            Hospital
           </ThemedText>
         </TouchableOpacity>
       </View>
@@ -352,7 +312,7 @@ export default function LoginScreen() {
               </View>
             </View>
           </View>
-        ) : activeTab === 'driver' ? (
+        ) : (
           <View style={styles.form}>
             <ThemedText style={styles.formTitle}>Driver Login</ThemedText>
             <ThemedText style={styles.formDescription}>
@@ -424,83 +384,6 @@ export default function LoginScreen() {
               <ThemedText style={styles.registerText}>
                 Not registered? Contact administration or use Postman to register
               </ThemedText>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.form}>
-            <ThemedText style={styles.formTitle}>Hospital Admin Login</ThemedText>
-            <ThemedText style={styles.formDescription}>
-              Enter hospital credentials to access hospital dashboard
-            </ThemedText>
-            
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="local-hospital" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Hospital ID"
-                value={hospitalCredentials.hospitalId}
-                onChangeText={(text) => setHospitalCredentials({...hospitalCredentials, hospitalId: text})}
-                autoCapitalize="none"
-              />
-            </View>
-
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="person" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Admin Username"
-                value={hospitalCredentials.username}
-                onChangeText={(text) => setHospitalCredentials({...hospitalCredentials, username: text})}
-                autoCapitalize="none"
-              />
-            </View>
-            
-            <View style={styles.inputContainer}>
-              <MaterialIcons name="lock" size={20} color="#666" style={styles.inputIcon} />
-              <TextInput
-                style={styles.input}
-                placeholder="Password"
-                value={hospitalCredentials.password}
-                onChangeText={(text) => setHospitalCredentials({...hospitalCredentials, password: text})}
-                secureTextEntry
-              />
-            </View>
-            
-            <TouchableOpacity 
-              style={[styles.loginButton, styles.hospitalLoginButton, loading && styles.buttonDisabled]}
-              onPress={handleHospitalLogin}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#FFF" />
-              ) : (
-                <>
-                  <MaterialIcons name="local-hospital" size={20} color="#FFF" />
-                  <ThemedText style={styles.loginButtonText}>
-                    Login as Hospital Admin
-                  </ThemedText>
-                </>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.features}>
-              <ThemedText style={styles.featuresTitle}>Hospital Admin Features:</ThemedText>
-              <View style={styles.featureItem}>
-                <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-                <ThemedText style={styles.featureText}>Manage hospital ambulances</ThemedText>
-              </View>
-              <View style={styles.featureItem}>
-                <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-                <ThemedText style={styles.featureText}>View patient admissions</ThemedText>
-              </View>
-              <View style={styles.featureItem}>
-                <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-                <ThemedText style={styles.featureText}>Monitor emergency cases</ThemedText>
-              </View>
-              <View style={styles.featureItem}>
-                <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
-                <ThemedText style={styles.featureText}>Generate hospital reports</ThemedText>
-              </View>
             </View>
           </View>
         )}
@@ -640,9 +523,6 @@ const styles = StyleSheet.create({
   },
   driverLoginButton: {
     backgroundColor: '#1976D2',
-  },
-  hospitalLoginButton: {
-    backgroundColor: '#7B1FA2',
   },
   buttonDisabled: {
     opacity: 0.6,
